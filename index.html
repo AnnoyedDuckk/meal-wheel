@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>What should I eat or bring to a potluck?</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;800&display=swap">
+<style>
+:root{--bg:#eef2f6;--ink:#1b2a41;--card:#fff;--muted:#5b6b82;--row:76px;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101826;--ink:#f1f5f9;--card:#1a2638;--muted:#9fb0c7}}
+:root[data-theme="dark"]{--bg:#101826;--ink:#f1f5f9;--card:#1a2638;--muted:#9fb0c7}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:'Bricolage Grotesque',system-ui,sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:16px 12px 28px;gap:14px}
+h1{font-size:1.4rem;font-weight:800;margin:0}
+.machine,.result{width:min(100%,560px);background:var(--card);border-radius:18px;padding:12px;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.heads,.reels{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.heads span{text-align:center;font-weight:800;font-size:.75rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding-bottom:6px}
+.reels{position:relative;height:calc(var(--row)*3)}
+.reels::before{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;border-radius:10px;background:linear-gradient(rgba(16,24,38,.6),transparent 34%,transparent 66%,rgba(16,24,38,.6))}
+.reels::after{content:"";position:absolute;left:-4px;right:-4px;top:var(--row);height:var(--row);border:4px solid #ffb703;border-radius:12px;z-index:3;pointer-events:none}
+.win{overflow:hidden;border-radius:10px;height:100%}
+.strip{will-change:transform}
+.cell{height:var(--row);display:flex;align-items:center;justify-content:center;text-align:center;padding:0 6px;color:#fff;font-weight:800;font-size:clamp(.82rem,3.9vw,1.1rem);line-height:1.1;overflow-wrap:anywhere;text-shadow:0 1px 2px rgba(0,0,0,.35);border-bottom:2px solid rgba(255,255,255,.7)}
+#spin{width:min(100%,560px);min-height:58px;border:0;border-radius:14px;background:var(--ink);color:var(--bg);font-family:inherit;font-weight:800;font-size:1.25rem;letter-spacing:.1em;cursor:pointer;touch-action:manipulation}
+#spin:disabled{opacity:.6;cursor:default}
+#spin:focus-visible{outline:4px solid #ffb703;outline-offset:3px}
+.result{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;align-items:center;min-height:56px}
+.result .hint{color:var(--muted);margin:0;text-align:center}
+.chip{padding:10px 16px;border-radius:999px;color:#fff;font-weight:800;font-size:1.05rem;animation:pop .25s ease-out}
+.links{flex-basis:100%;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:4px}
+.links a{color:var(--ink);font-weight:800;border:2px solid var(--ink);border-radius:999px;padding:8px 16px;text-decoration:none}
+.links a:focus-visible{outline:4px solid #ffb703;outline-offset:2px}
+@keyframes pop{from{transform:scale(.7);opacity:0}to{transform:scale(1);opacity:1}}
+@media (prefers-reduced-motion:reduce){.chip{animation:none}}
+</style>
+</head>
+<body>
+<h1>What should I eat or bring to a potluck?</h1>
+<div class="machine">
+  <div class="heads"><span>Cuisine</span><span>Flavour</span><span>Timing</span></div>
+  <div class="reels" aria-hidden="true">
+    <div class="win"><div class="strip" id="s0"></div></div>
+    <div class="win"><div class="strip" id="s1"></div></div>
+    <div class="win"><div class="strip" id="s2"></div></div>
+  </div>
+</div>
+<button id="spin" type="button">SPIN</button>
+<div class="result" id="result" aria-live="polite"><p class="hint">Spin to pick a cuisine, flavour and meal time.</p></div>
+
+<script>
+// ---- Data: fixed lists with hard max counts ----
+const REELS = [
+  { name:'Cuisine', max:24, hue:0, dur:2600,
+    items:['Italian','Jamaican','Filipino','North American','Southern','Canadian','Chinese','Japanese','Indonesian','Kazakh','Mexican','Thai','Ethiopian','Moroccan','Peruvian','Vietnamese','Korean','Lebanese','Brazilian','Greek','Indian','French'] },
+  { name:'Flavour', max:22, hue:140, dur:3600,
+    items:['Salty and sweet','Dry and smoky','Soupy and savory','Spicy and tangy','Bitter and rich','Herby and fresh','Sour and umami','Nutty and buttery','Citrus and spice','Earthy and fermented','Creamy and garlicky','Peppery and bright','Spicy','Sweet','Savory','Tangy','Smoky','Creamy','Fresh','Umami'] },
+  { name:'Timing', max:14, hue:250, dur:4600,
+    items:['Breakfast','Lunch','Dinner','Dessert','Snack','Supper','Brunch','Late night','Mid-morning','Afternoon tea','Pre-dinner','Post-workout'] }
+];
+REELS.forEach(r => { if (r.items.length > r.max) throw new Error(r.name + ' exceeds max ' + r.max); });
+
+// ---- Pure helpers: p = strip row index sitting in the center slot ----
+const ROW = 76, COPIES = 11;               // ROW must match --row in CSS
+const mod = (a, n) => ((a % n) + n) % n;
+const itemAt = (p, n) => mod(p, n);
+const nextPos = (p, n, target, rnd = Math.random) => p + mod(target - p, n) + n * (4 + Math.floor(rnd() * 3));
+
+const hue = (r, i) => `hsl(${(r.hue + i * 137.5) % 360} 62% ${44 + REELS.indexOf(r) * 3}%)`;
+const place = r => { r.el.style.transform = `translateY(${-(r.p - 1) * ROW}px)`; };
+
+REELS.forEach((r, k) => {
+  const n = r.items.length, frag = document.createDocumentFragment();
+  for (let c = 0; c < COPIES; c++) r.items.forEach((label, i) => {
+    const d = document.createElement('div');
+    d.className = 'cell'; d.textContent = label; d.style.background = hue(r, i);
+    frag.append(d);
+  });
+  r.el = document.getElementById('s' + k); r.el.append(frag);
+  r.p = n + Math.floor(Math.random() * n); place(r);
+});
+
+// ---- Spin: reels move upward, stop top to bottom ----
+const btn = document.getElementById('spin'), out = document.getElementById('result');
+const reduce = matchMedia('(prefers-reduced-motion:reduce)').matches;
+
+function chip(r, i) {
+  const c = document.createElement('span');
+  c.className = 'chip'; c.textContent = r.items[i]; c.style.background = hue(r, i);
+  out.append(c);
+}
+function addLinks() {
+  const [cuisine, flavour, timing] = [...out.querySelectorAll('.chip')].map(c => c.textContent.toLowerCase());
+  const q = encodeURIComponent(`${flavour} ${cuisine} ${timing} recipe`);
+  const box = document.createElement('div'); box.className = 'links';
+  [['Find recipes', `https://www.google.com/search?q=${q}`],
+   ['See photos', `https://www.google.com/search?tbm=isch&q=${q}`]].forEach(([text, href]) => {
+    const a = document.createElement('a');
+    a.href = href; a.target = '_blank'; a.rel = 'noopener'; a.textContent = text;
+    box.append(a);
+  });
+  out.append(box);
+}
+btn.addEventListener('click', () => {
+  btn.disabled = true; out.replaceChildren();
+  let done = 0;
+  REELS.forEach(r => {
+    const n = r.items.length, target = Math.floor(Math.random() * n), d = reduce ? 300 : r.dur;
+    r.p = nextPos(r.p, n, target);
+    r.el.style.transition = `transform ${d}ms cubic-bezier(.12,.6,.1,1)`;
+    place(r);
+    setTimeout(() => {
+      chip(r, itemAt(r.p, n));
+      r.el.style.transition = 'none'; r.p = n + mod(r.p, n); place(r); // snap back to an identical-looking spot
+      if (++done === REELS.length) { btn.disabled = false; addLinks(); }
+    }, d + 50);
+  });
+});
+
+// ---- Self-test: run `runTests()` in the console (auto-runs with ?test) ----
+window.runTests = function () {
+  const fails = [];
+  REELS.forEach(r => {
+    const n = r.items.length, seen = new Set(); let p = n;
+    for (let s = 0; s < 1000; s++) {
+      const t = Math.floor(Math.random() * n), np = nextPos(p, n, t);
+      if (np <= p) fails.push(`${r.name}: did not move forward`);
+      if (itemAt(np, n) !== t) fails.push(`${r.name}: wanted ${t}, got ${itemAt(np, n)}`);
+      if (np + 1 >= n * COPIES) fails.push(`${r.name}: strip too short`);
+      seen.add(itemAt(np, n)); p = n + mod(np, n);
+    }
+    if (seen.size !== n) fails.push(`${r.name}: only ${seen.size}/${n} items reachable`);
+    if (n > r.max) fails.push(`${r.name}: over max`);
+  });
+  console[fails.length ? 'error' : 'log'](fails.length ? 'FAIL' : 'PASS: 3 reels x 1000 spins, all items reachable', fails);
+  return !fails.length;
+};
+if (location.search.includes('test')) runTests();
+</script>
+</body>
+</html>

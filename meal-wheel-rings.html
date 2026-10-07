@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Meal Wheel</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;800&display=swap">
+<style>
+:root{--bg:#eef2f6;--ink:#1b2a41;--card:#fff;--muted:#5b6b82;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101826;--ink:#f1f5f9;--card:#1a2638;--muted:#9fb0c7}}
+:root[data-theme="dark"]{--bg:#101826;--ink:#f1f5f9;--card:#1a2638;--muted:#9fb0c7}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:'Bricolage Grotesque',system-ui,sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px 16px 32px;gap:20px}
+h1{font-size:1.5rem;font-weight:800;margin:0}
+.wheel{position:relative;width:min(96vw,640px);aspect-ratio:560/570}
+svg{width:100%;height:100%;display:block;overflow:visible}
+.ring{transform-origin:0 0;will-change:transform}
+.seg text{fill:#fff;font-weight:800;pointer-events:none;paint-order:stroke;stroke:rgba(0,0,0,.25);stroke-width:2px}
+#spin{position:absolute;left:50%;top:50.88%;transform:translate(-50%,-50%);width:16.5%;aspect-ratio:1;border-radius:50%;border:4px solid var(--card);background:var(--ink);color:var(--bg);font:800 clamp(.8rem,3.4vw,1.15rem)/1 inherit;font-family:inherit;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.35)}
+#spin:disabled{opacity:.6;cursor:default}
+#spin:focus-visible{outline:4px solid #ffb703;outline-offset:3px}
+.result{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;min-height:56px;align-items:center;width:min(96vw,640px);background:var(--card);border-radius:14px;padding:14px;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.result .hint{color:var(--muted);margin:0}
+.chip{padding:10px 16px;border-radius:999px;color:#fff;font-weight:800;font-size:1.05rem;animation:pop .25s ease-out}
+.links{flex-basis:100%;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:4px}
+.links a{color:var(--ink);font-weight:800;border:2px solid var(--ink);border-radius:999px;padding:8px 16px;text-decoration:none}
+.links a:focus-visible{outline:4px solid #ffb703;outline-offset:2px}
+@keyframes pop{from{transform:scale(.7);opacity:0}to{transform:scale(1);opacity:1}}
+@media (prefers-reduced-motion:reduce){.chip{animation:none}}
+</style>
+</head>
+<body>
+<h1>What should I eat?</h1>
+<div class="wheel">
+  <svg viewBox="-280 -290 560 570" aria-hidden="true">
+    <g id="r0" class="ring"></g><g id="r1" class="ring"></g><g id="r2" class="ring"></g>
+    <circle r="46" fill="var(--card)"/>
+    <polygon points="-15,-286 15,-286 0,-252" fill="#ffb703" stroke="var(--ink)" stroke-width="3" stroke-linejoin="round"/>
+  </svg>
+  <button id="spin" type="button">SPIN</button>
+</div>
+<div class="result" id="result" aria-live="polite"><p class="hint">Spin to pick a cuisine, flavour and meal time.</p></div>
+
+<script>
+// ---- Data: fixed lists with hard max counts ----
+const RINGS = [
+  { name:'Cuisine', max:24, hue:0,   r0:192, r1:268, font:11.5, wrap:10, dur:3200,
+    items:['Italian','Jamaican','Filipino','North American','Southern','Canadian','Chinese','Japanese','Indonesian','Kazakh','Mexican','Thai','Ethiopian','Moroccan','Peruvian','Vietnamese','Korean','Lebanese','Brazilian','Greek','Indian','French'] },
+  { name:'Flavour', max:22, hue:140, r0:112, r1:192, font:10.5, wrap:11, dur:4400,
+    items:['Salty and sweet','Dry and smoky','Soupy and savory','Spicy and tangy','Bitter and rich','Herby and fresh','Sour and umami','Nutty and buttery','Citrus and spice','Earthy and fermented','Creamy and garlicky','Peppery and bright','Spicy','Sweet','Savory','Tangy','Smoky','Creamy','Fresh','Umami'] },
+  { name:'Timing',  max:14, hue:250, r0:46,  r1:112, font:10.5, wrap:11, dur:5600,
+    items:['Breakfast','Lunch','Dinner','Dessert','Snack','Supper','Brunch','Late night','Mid-morning','Afternoon tea','Pre-dinner','Post-workout'] }
+];
+RINGS.forEach(r => { if (r.items.length > r.max) throw new Error(r.name + ' exceeds max ' + r.max); });
+
+// ---- Pure helpers (angles: degrees clockwise from top; pointer at top) ----
+const norm = a => ((a % 360) + 360) % 360;
+const indexAtPointer = (rot, n) => Math.floor(norm(-rot) / (360 / n)) % n;
+function rotationFor(current, n, target, rnd = Math.random) {
+  const seg = 360 / n;
+  const desired = (target + 0.5 + (rnd() - 0.5) * 0.8) * seg;
+  return current + norm(-desired - current) + 360 * (5 + Math.floor(rnd() * 3));
+}
+
+// ---- Drawing ----
+const pt = (r, deg) => { const t = deg * Math.PI / 180; return [r * Math.sin(t), -r * Math.cos(t)]; };
+const NS = 'http://www.w3.org/2000/svg';
+const hue = (ring, i, n) => `hsl(${(ring.hue + i * 137.5) % 360} 62% ${44 + (RINGS.indexOf(ring) * 3)}%)`;
+function wrap(label, max) {
+  const lines = [];
+  (label.match(/[^\s-]+-?/g) || []).forEach(tok => {
+    const cur = lines[lines.length - 1];
+    if (cur !== undefined && (cur + (cur.endsWith('-') ? '' : ' ') + tok).length <= max) lines[lines.length - 1] = cur + (cur.endsWith('-') ? '' : ' ') + tok;
+    else lines.push(tok);
+  });
+  return lines;
+}
+
+RINGS.forEach((ring, k) => {
+  const g = document.getElementById('r' + k), n = ring.items.length, seg = 360 / n;
+  ring.items.forEach((label, i) => {
+    const a0 = i * seg, a1 = a0 + seg, large = seg > 180 ? 1 : 0;
+    const [x0, y0] = pt(ring.r1, a0), [x1, y1] = pt(ring.r1, a1);
+    const [x2, y2] = pt(ring.r0, a1), [x3, y3] = pt(ring.r0, a0);
+    const p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', `M${x0} ${y0}A${ring.r1} ${ring.r1} 0 ${large} 1 ${x1} ${y1}L${x2} ${y2}A${ring.r0} ${ring.r0} 0 ${large} 0 ${x3} ${y3}Z`);
+    p.setAttribute('fill', hue(ring, i, n));
+    p.setAttribute('stroke', '#fff'); p.setAttribute('stroke-width', '2');
+    const t = document.createElementNS(NS, 'text');
+    t.setAttribute('transform', `rotate(${a0 + seg / 2 - 90}) translate(${(ring.r0 + ring.r1) / 2},0)`);
+    t.setAttribute('text-anchor', 'middle'); t.setAttribute('dominant-baseline', 'central');
+    t.setAttribute('font-size', ring.font);
+    const lines = wrap(label, ring.wrap);
+    lines.forEach((ln, j) => {
+      const s = document.createElementNS(NS, 'tspan');
+      s.setAttribute('x', 0); s.setAttribute('dy', (j ? 1.15 : -0.575 * (lines.length - 1)) + 'em');
+      s.textContent = ln; t.append(s);
+    });
+    const grp = document.createElementNS(NS, 'g'); grp.setAttribute('class', 'seg');
+    grp.append(p, t); g.append(grp);
+  });
+  ring.rot = 0; ring.el = g;
+});
+
+// ---- Spin ----
+const btn = document.getElementById('spin'), out = document.getElementById('result');
+const reduce = matchMedia('(prefers-reduced-motion:reduce)').matches;
+
+function pick(ring) {
+  const n = ring.items.length, target = Math.floor(Math.random() * n);
+  ring.rot = rotationFor(ring.rot, n, target);
+  return target;
+}
+function chip(ring, i) {
+  const c = document.createElement('span');
+  c.className = 'chip'; c.textContent = ring.items[i];
+  c.style.background = hue(ring, i, ring.items.length);
+  out.append(c);
+}
+function addLinks() {
+  const [cuisine, flavour, timing] = [...out.querySelectorAll('.chip')].map(c => c.textContent.toLowerCase());
+  const q = encodeURIComponent(`${flavour} ${cuisine} ${timing} recipe`);
+  const box = document.createElement('div'); box.className = 'links';
+  [['Find recipes', `https://www.google.com/search?q=${q}`],
+   ['See photos', `https://www.google.com/search?tbm=isch&q=${q}`]].forEach(([text, href]) => {
+    const a = document.createElement('a');
+    a.href = href; a.target = '_blank'; a.rel = 'noopener'; a.textContent = text;
+    box.append(a);
+  });
+  out.append(box);
+}
+btn.addEventListener('click', () => {
+  btn.disabled = true; out.replaceChildren();
+  let done = 0;
+  RINGS.forEach(ring => {
+    const target = pick(ring), d = reduce ? 400 : ring.dur;
+    ring.el.style.transition = `transform ${d}ms cubic-bezier(.12,.6,.1,1)`;
+    ring.el.style.transform = `rotate(${ring.rot}deg)`;
+    setTimeout(() => {
+      chip(ring, indexAtPointer(ring.rot, ring.items.length)); // read result from geometry, not from `target`
+      if (++done === RINGS.length) { btn.disabled = false; addLinks(); }
+    }, d + 50);
+  });
+});
+
+// ---- Self-test: run `runTests()` in the browser console (also auto-runs with ?test) ----
+window.runTests = function () {
+  const fails = [];
+  RINGS.forEach(ring => {
+    const n = ring.items.length, seen = new Set(); let rot = 0;
+    for (let s = 0; s < 1000; s++) {
+      const target = Math.floor(Math.random() * n);
+      rot = rotationFor(rot, n, target);
+      const got = indexAtPointer(rot, n);
+      if (got !== target) fails.push(`${ring.name}: wanted ${target}, got ${got}`);
+      seen.add(got);
+    }
+    if (seen.size !== n) fails.push(`${ring.name}: only ${seen.size}/${n} items reachable`);
+    if (n > ring.max) fails.push(`${ring.name}: over max`);
+  });
+  console[fails.length ? 'error' : 'log'](fails.length ? 'FAIL' : 'PASS: 3 rings x 1000 spins, all items reachable', fails);
+  return !fails.length;
+};
+if (location.search.includes('test')) runTests();
+</script>
+</body>
+</html>

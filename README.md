@@ -70,23 +70,6 @@ Shortcut: add `?test` to the end of the web address and it runs by itself.
 
 ---
 
-## How to put it online for free (GitHub Pages)
-
-1. Go to **github.com** and click **+ → New repository**.
-2. Name it `meal-wheel`, choose **Public**, and click **Create repository**.
-3. Click **uploading an existing file**. Drag in `index.html` (and this `README.md`).
-4. Click **Commit changes**.
-5. Go to **Settings → Pages**. Under **Source** choose **Deploy from a branch**,
-   then branch **main** and folder **/ (root)**, and click **Save**.
-6. Wait 1 to 2 minutes. Your link is:
-   `https://YOUR-USERNAME.github.io/meal-wheel/`
-
-To update the app later, upload the new `index.html` the same way and commit.
-
-> The file **must** be named `index.html` and sit at the top level of the repository.
-
----
-
 ## Good to know
 
 - **Privacy:** the app collects nothing. It loads one font from Google Fonts, and the recipe

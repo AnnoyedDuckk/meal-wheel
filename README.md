@@ -1,6 +1,6 @@
 # 🎡 What Should I Eat or Bring to a Potluck?
 
-A tiny spinning app for friends who never know what to bring.
+A tiny spinning app for friends who never know what to bring, for those who cannot decide on what to eat, and even for those who want to try something new!
 Press **SPIN** and three columns roll like a slot machine. You get:
 
 1. a **cuisine** (like Japanese),
